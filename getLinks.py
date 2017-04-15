@@ -25,8 +25,10 @@ def sort_by_length(x): # для сортировки tuple по длине
         assert False, 'неизвестная зверушка'
 
 
-def insert_links(sentence, links, sentence_tokens): # не закончено, как по обработанному предложению стемов сделать обработанное обычное?
+def insert_links(sentence, links, sentence_tokens): # всё ещё едут ссылки немного. закрывающиеся скобки?
     links.sort(key=sort_by_first)
+    print (links)
+    amount_of_special_tokens_in_sentence = 0
     for link in links:
         amount_of_spaces = sentence.count(' ', 0, link[0])
         if amount_of_spaces > len(sentence_tokens):
@@ -34,13 +36,19 @@ def insert_links(sentence, links, sentence_tokens): # не закончено, �
             return ''
         spaces_in_link = sentence.count(' ', link[0], link[1])
         commas_in_link = sentence.count(',', link[0], link[1])
-        additional_tokens_in_link = spaces_in_link + commas_in_link
+        parenthesis_in_link = sentence.count('(', link[0], link[1])
+        additional_tokens_in_link = spaces_in_link + commas_in_link + parenthesis_in_link
         if link[2] == 1:
-            sentence_tokens[amount_of_spaces] = "<PER>" + sentence_tokens[amount_of_spaces + additional_tokens_in_link] + "</PER>"
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<PER>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
         elif link[2] == 2:
-            sentence_tokens[amount_of_spaces] = "<LOC>" + sentence_tokens[amount_of_spaces + additional_tokens_in_link] + "</LOC>"
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<LOC>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</LOC>"
         elif link[2] == 3:
-            sentence_tokens[amount_of_spaces] = "<ORG>" + sentence_tokens[amount_of_spaces + additional_tokens_in_link] + "</ORG>"
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<ORG>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
+            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</ORG>"
+        amount_of_special_tokens_in_sentence += commas_in_link
+        amount_of_special_tokens_in_sentence += parenthesis_in_link
     return ' '.join(detokenizer_with_fixes(sentence_tokens))
         
 
@@ -52,6 +60,7 @@ def add_to_automaton(container_with_data, type, automaton):
             item = ' '.join(detokenizer_with_fixes(items))
         else:
             item = items
+        print (item)
         automaton.add_word(item, (type, item))
 
 
@@ -105,12 +114,10 @@ def detokenizer_with_fixes(sentence_tokens): # небольшие костыли
             count -= 1
         count += 1
     detokenized_sentence = detokenizer.detokenize(sentence_tokens)
-    print(detokenized_sentence)
     count = 0
     for item in detokenized_sentence:
         count += 1
         if item == '(':
-            print(detokenized_sentence[count])
             detokenized_sentence[count] = '(' + detokenized_sentence[count]
             detokenized_sentence.remove('(')
     count = 0
@@ -274,23 +281,24 @@ for dirp, dirn, files in os.walk(path):
                 print(per_link_list_stemmed)
                 wikilink_rx = re.compile(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]') # для удаления ссылок
                 article = wikilink_rx.sub(r'\1', article)
-                print(article)
+                # print(article)
                 article_sentences = sentence_tokenizer.tokenize(article) # разбили на предложения
                 sentence_number = 0
                 for sentence_original in article_sentences:
                     sentence_to_work_with = sentence_original[:-1] # отрезали пунктуатор (!.?)
                     sentence_tokens = tokenizer.tokenize(sentence_to_work_with)
-                    print(sentence_tokens)
+                    # print(sentence_tokens)
                     token_number_in_sentence = 0
                     skip_how_many_tokens = 0 # в случае если обработали подпоследовательность
                     stemmed_sentence = []
                     for token in sentence_tokens:
                         stemmed_sentence.append(stemmer.stem(token))
-                    sentence_to_work_with = ' '.join(detokenizer_with_fixes(sentence_tokens))
+                    sentence_to_work_with = ' '.join(detokenizer_with_fixes(stemmed_sentence))
                     sentence_links = []
-                    for end_index, (type, original_value) in automaton.iter(sentence_to_work_with):
+                    for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
                         start_index = end_index - len(original_value) + 1
-                        sentence_links.append((start_index, end_index, type))
+                        sentence_links.append((start_index, end_index, typ))
+                    print (sentence_to_work_with)
                     sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens)
                     sentence_to_work_with = sentence_to_work_with + sentence_original[-1]
                         # if skip_how_many_tokens > 0:
