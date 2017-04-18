@@ -17,27 +17,35 @@ def sort_by_first(x):
     return x[0]
 
 def sort_by_length(x): # для сортировки tuple по длине
-    if isinstance(x, str):
-        return (1, len(x))
-    elif isinstance(x, tuple):
-        return (len(x), 0)
-    else:
-        assert False, 'неизвестная зверушка'
+    return x[1] - x[0]
+    # if isinstance(x, str):
+    #     return (1, len(x))
+    # elif isinstance(x, tuple):
+    #     return (len(x), 0)
+    # else:
+    #     assert False, 'неизвестная зверушка'
 
 
 def insert_links(sentence, links, sentence_tokens): # всё ещё едут ссылки немного. закрывающиеся скобки?
+    links.sort(key=sort_by_length, reverse=True)
     links.sort(key=sort_by_first)
+    print ("In insert_links")
     print (links)
+    is_already_linked_marker = [0] * len(sentence_tokens) # храним и помечаем проставленные ссылки, чтобы случайно не поставить короткую и длинную на одно и то же
     amount_of_special_tokens_in_sentence = 0
+    previous_link_start_position = 0
     for link in links:
         amount_of_spaces = sentence.count(' ', 0, link[0])
         if amount_of_spaces > len(sentence_tokens):
             assert False, "что-то не так во вставке ссылок"
             return ''
-        spaces_in_link = sentence.count(' ', link[0], link[1])
-        commas_in_link = sentence.count(',', link[0], link[1])
-        parenthesis_in_link = sentence.count('(', link[0], link[1])
-        additional_tokens_in_link = spaces_in_link + commas_in_link + parenthesis_in_link
+        amount_of_special_tokens_in_sentence = sum(sentence.count(x, 0, link[0]) for x in (',', '(', ')', '\"'))
+        additional_tokens_in_link = sum(sentence.count(x, link[0], link[1]) for x in (',', '(', ')', ' '))
+        if is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence] == 1:
+            continue
+        print (is_already_linked_marker)
+        is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence :
+        amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
         if link[2] == 1:
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<PER>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
@@ -47,8 +55,7 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
         elif link[2] == 3:
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<ORG>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</ORG>"
-        amount_of_special_tokens_in_sentence += commas_in_link
-        amount_of_special_tokens_in_sentence += parenthesis_in_link
+        #previous_link_start_position = link[0]
     return ' '.join(detokenizer_with_fixes(sentence_tokens))
         
 
@@ -169,6 +176,7 @@ def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # полу
                 temp = temp_list.pop()
                 if should_use_parts and not temp.endswith('.'):
                     output_list.append(temp,)
+                    output_list.append(tuple(temp_list))
                 temp_list.insert(0, temp)
                 output_list.append(tuple(temp_list))
                 counter -= 1
@@ -270,9 +278,9 @@ for dirp, dirn, files in os.walk(path):
                 pop_link_list_stemmed = tokenize_and_stem_set(pop_link_set, True, False) # нужно перемешивать, не использовать части как независимые
                 org_link_list_stemmed = tokenize_and_stem_set(org_link_set, False, False) # не перемешиваем и не используем части как независимые
                 per_link_list_stemmed = tokenize_and_stem_set(person_link_set, True, True) # и перемешиваем и рассматриваем части как независимые
-                pop_link_list_stemmed.sort(key=sort_by_length, reverse = True)
-                per_link_list_stemmed.sort(key=sort_by_length, reverse = True)
-                org_link_list_stemmed.sort(key=sort_by_length, reverse = True)
+                # pop_link_list_stemmed.sort(key=sort_by_length, reverse = True)
+                # per_link_list_stemmed.sort(key=sort_by_length, reverse = True)
+                # org_link_list_stemmed.sort(key=sort_by_length, reverse = True)
                 add_to_automaton(per_link_list_stemmed, 1, automaton)
                 add_to_automaton(pop_link_list_stemmed, 2, automaton)
                 add_to_automaton(org_link_list_stemmed, 3, automaton)
@@ -293,6 +301,7 @@ for dirp, dirn, files in os.walk(path):
                     stemmed_sentence = []
                     for token in sentence_tokens:
                         stemmed_sentence.append(stemmer.stem(token))
+                    print (stemmed_sentence)
                     sentence_to_work_with = ' '.join(detokenizer_with_fixes(stemmed_sentence))
                     sentence_links = []
                     for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
