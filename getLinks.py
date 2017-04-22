@@ -108,18 +108,23 @@ def detokenizer_with_fixes(sentence_tokens): # небольшие костыли
     quot_even = 0
     count = 0
     for token in sentence_tokens:
-        if token == '&quot;' and quot_even == 0:
-            quot_even = 1
-            sentence_tokens[count + 1] = '\"' + sentence_tokens[count + 1]
+        if (token == '&quot;') and (quot_even == 0) and (count < len(sentence_tokens) - 1):
+            if sentence_tokens[count + 1] == '&quot;':
+                sentence_tokens[count + 1] = '&quotquot;'
+            else:
+                quot_even = 1
+                sentence_tokens[count + 1] = '\"' + sentence_tokens[count + 1]
             sentence_tokens.remove('&quot;')
-            print(sentence_tokens)
             count -= 1
-        elif token == '&quot;' and quot_even != 0:
+        elif token == '&quot;' and quot_even != 0: # out of range??
             quot_even = 0
             sentence_tokens[count] = sentence_tokens[count] + '\"'
             sentence_tokens.remove('&quot;')
             count -= 1
+        elif token == '&quot;' and count >= len(sentence_tokens) - 1 and quot_even != 0:
+            sentence_tokens[count] = sentence_tokens[count] + '\"'
         count += 1
+    print (sentence_tokens)
     detokenized_sentence = detokenizer.detokenize(sentence_tokens)
     count = 0
     for item in detokenized_sentence:
@@ -163,14 +168,16 @@ def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # полу
         while counter > 0:
             counter -= 1
             tokenized[counter] = stemmer.stem(tokenized[counter])
+        for el in tokenized:
+            if el == "," or el == "-" or el == "(" or el == ")" or el == "."\
+                        or el == '``' or el == "\"" or el == "\'"\
+                    or el == "—": # Убираем знаки препинания и скобки. Вообще нужно ещё почистить от слов вида "река" и "город" # а может и не нужно
+                tokenized.remove(el)
+                counter -= 1
         output_list.append(tuple(tokenized))
         counter = len(tokenized) #switching to list of tuples now
         if should_switch:
             temp_list = tokenized
-            for el in temp_list:
-                if el == "," or el == "-" or el == "(" or el == ")": # Убираем знаки препинания и скобки. Вообще нужно ещё почистить от слов вида "река" и "город" # а может и не нужно
-                    temp_list.remove(el)
-                    counter -= 1
             output_list.append(tuple(temp_list.__reversed__()))
             while counter > 0:
                 temp = temp_list.pop()
@@ -251,9 +258,11 @@ for dirp, dirn, files in os.walk(path):
                 temp_set = temp_set.union(find_synonims(article_name, synonyms_all_data))
                 # person_link_set, pop_link_set, org_link_set = add_to_set(temp_set, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                 person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, temp_set, person_link_set, pop_link_set, org_link_set) # добавили в сеты
+                old_pos = 0
                 while pos > 0: #ищем все ссылки
+                    old_pos = pos
                     isProper = False # совпадает ли текст ссылки и сама ссылка
-                    if (article.find("|", pos + 1) > article.find("]]", pos + 1)):
+                    if (article.find("|", pos + 1) > article.find("]]", pos + 1)) or article.find("|", pos + 1) == -1:
                         isProper = True
                     if not isProper:
                         index = article.find("|", pos)
@@ -261,11 +270,12 @@ for dirp, dirn, files in os.walk(path):
                     else:
                         index = article.find("]]", pos)
                         text = article[pos + 2: index]
-                    if text.startswith("Файл:"):
-                        pos = article.find("[[", pos + 2, len(article))
+                    if text.startswith("Файл:") or text.startswith("Категория:"):
+                        pos = article.find("[[", pos + 2)
                         continue
                     synonyms = set()
                     synonyms.add(text)
+                    print (text)
                     if not isProper:
                         pos = article.find("]]", index)
                         syn = article[index + 1: pos]
@@ -273,7 +283,9 @@ for dirp, dirn, files in os.walk(path):
                     synonyms = synonyms.union(find_synonims(text, synonyms_all_data)) # поиск синонимов
                     # person_link_set, pop_link_set, org_link_set = add_to_set(synonyms, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                     person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, synonyms, person_link_set, pop_link_set, org_link_set) # добавили в сеты
-                    pos = article.find("[[", pos + 1, len(article))
+                    pos = article.find("[[", pos + 1)
+                    if old_pos > pos:
+                        break
                 pos = -1
                 pop_link_list_stemmed = tokenize_and_stem_set(pop_link_set, True, False) # нужно перемешивать, не использовать части как независимые
                 org_link_list_stemmed = tokenize_and_stem_set(org_link_set, False, False) # не перемешиваем и не используем части как независимые
@@ -286,7 +298,6 @@ for dirp, dirn, files in os.walk(path):
                 add_to_automaton(org_link_list_stemmed, 3, automaton)
                 automaton.make_automaton()
                 # получили списки стемов синонимов
-                print(per_link_list_stemmed)
                 wikilink_rx = re.compile(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]') # для удаления ссылок
                 article = wikilink_rx.sub(r'\1', article)
                 # print(article)
@@ -301,116 +312,16 @@ for dirp, dirn, files in os.walk(path):
                     stemmed_sentence = []
                     for token in sentence_tokens:
                         stemmed_sentence.append(stemmer.stem(token))
-                    print (stemmed_sentence)
                     sentence_to_work_with = ' '.join(detokenizer_with_fixes(stemmed_sentence))
                     sentence_links = []
                     for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
                         start_index = end_index - len(original_value) + 1
+                        if (end_index - start_index) <= 2: # одинокие буквы в случае если не стоит точка при инициалах
+                            continue
                         sentence_links.append((start_index, end_index, typ))
                     print (sentence_to_work_with)
                     sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens)
                     sentence_to_work_with = sentence_to_work_with + sentence_original[-1]
-                        # if skip_how_many_tokens > 0:
-                        #     token_number_in_sentence += 1
-                        #     skip_how_many_tokens -= 1
-                        #     continue
-                        # sentence_token_stem = stemmer.stem(token)
-                        # for text in per_link_list_stemmed:
-                        #     text_token_stem = str()
-                        #     if isinstance(text, str):
-                        #         text_token_stem = text
-                        #     else:
-                        #         text_token_stem = text[0]
-                        #     if sentence_token_stem == text_token_stem:
-                        #         if len(text) > 1 and not isinstance(text, str):
-                        #             if len(text) > (len(sentence_tokens) - token_number_in_sentence):
-                        #                 # do nothing
-                        #                 pass
-                        #             else:
-                        #                 offset = 0
-                        #                 for text_token_check in text:
-                        #                     if offset == 0:
-                        #                         offset += 1
-                        #                         continue
-                        #                     sentence_token_stem_inner = stemmer.stem(sentence_tokens[token_number_in_sentence + offset])
-                        #                     text_token_stem_inner = text[offset]
-                        #                     if not (sentence_token_stem_inner == text_token_stem_inner):
-                        #                         offset = -1
-                        #                         break
-                        #                     offset += 1
-                        #                 if not (offset == -1): # если совпала последовательность
-                        #                     sentence_tokens[token_number_in_sentence] = "[PER-" + token
-                        #                     sentence_tokens[token_number_in_sentence + offset - 1] = sentence_tokens[token_number_in_sentence + offset - 1] + "]"
-                        #                     skip_how_many_tokens = offset - 1
-                        #                     break
-                        #         else:
-                        #             sentence_tokens[token_number_in_sentence] = "[PER-" + token + "]"
-                        #             break
-                        # for text in org_link_list_stemmed:
-                        #     text_token_stem = str()
-                        #     if isinstance(text, str):
-                        #         text_token_stem = text
-                        #     else:
-                        #         text_token_stem = text[0]
-                        #     if sentence_token_stem == text_token_stem:
-                        #         if len(text) > 1 and not isinstance(text, str):
-                        #             if len(text) > (len(sentence_tokens) - token_number_in_sentence):
-                        #                 # do nothing
-                        #                 pass
-                        #             else:
-                        #                 offset = 0
-                        #                 for text_token_check in text:
-                        #                     if offset == 0:
-                        #                         offset += 1
-                        #                         continue
-                        #                     sentence_token_stem_inner = stemmer.stem(sentence_tokens[token_number_in_sentence + offset])
-                        #                     text_token_stem_inner = text[offset]
-                        #                     if not (sentence_token_stem_inner == text_token_stem_inner):
-                        #                         offset = -1
-                        #                         break
-                        #                     offset += 1
-                        #                 if not (offset == -1): # если совпала подпоследовательность
-                        #                     sentence_tokens[token_number_in_sentence] = "[ORG-" + token
-                        #                     sentence_tokens[token_number_in_sentence + offset - 1] = sentence_tokens[token_number_in_sentence + offset - 1] + "]"
-                        #                     skip_how_many_tokens = offset - 1
-                        #                     break
-                        #         else:
-                        #             sentence_tokens[token_number_in_sentence] = "[ORG-" + token + "]"
-                        #             break
-                        # for text in pop_link_list_stemmed:
-                        #     text_token_stem = str()
-                        #     if isinstance(text, str):
-                        #         text_token_stem = text
-                        #     else:
-                        #         text_token_stem = text[0]
-                        #     if sentence_token_stem == text_token_stem:
-                        #         if len(text) > 1 and not isinstance(text, str):
-                        #             if len(text) > (len(sentence_tokens) - token_number_in_sentence):
-                        #                 # do nothing
-                        #                 pass
-                        #             else:
-                        #                 offset = 0
-                        #                 for text_token_check in text:
-                        #                     if offset == 0:
-                        #                         offset += 1
-                        #                         continue
-                        #                     sentence_token_stem_inner = stemmer.stem(sentence_tokens[token_number_in_sentence + offset])
-                        #                     text_token_stem_inner = text[offset]
-                        #                     if not (sentence_token_stem_inner == text_token_stem_inner):
-                        #                         offset = -1
-                        #                         break
-                        #                     offset += 1
-                        #                 if not (offset == -1):
-                        #                     sentence_tokens[token_number_in_sentence] = "[LOC-" + token
-                        #                     sentence_tokens[token_number_in_sentence + offset - 1] = sentence_tokens[token_number_in_sentence + offset - 1] + "]"
-                        #                     skip_how_many_tokens = offset - 1
-                        #                     break
-                        #         else:
-                        #             sentence_tokens[token_number_in_sentence] = "[LOC-" + token + "]"
-                        #             break
-                        # token_number_in_sentence += 1
-
-
                     sentence_original = sentence_to_work_with
                     article_sentences[sentence_number] = sentence_original
                     sentence_number += 1
