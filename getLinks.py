@@ -32,18 +32,17 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
     print ("In insert_links")
     print (links)
     is_already_linked_marker = [0] * len(sentence_tokens) # храним и помечаем проставленные ссылки, чтобы случайно не поставить короткую и длинную на одно и то же
-    amount_of_special_tokens_in_sentence = 0
-    previous_link_start_position = 0
+    special_characters_list = [', ', ' (', ') ', ' >', ' <'] # Символы, которые увеличивают смещение и считаются отдельными токенами
+    special_characters_sentence_list = [', ', ' (', ') ', ' >', ' <', ' \"'] # ещё посмотреть
     for link in links:
         amount_of_spaces = sentence.count(' ', 0, link[0])
         if amount_of_spaces > len(sentence_tokens):
             assert False, "что-то не так во вставке ссылок"
-            return ''
-        amount_of_special_tokens_in_sentence = sum(sentence.count(x, 0, link[0]) for x in (',', '(', ')', '\"'))
-        additional_tokens_in_link = sum(sentence.count(x, link[0], link[1]) for x in (',', '(', ')', ' '))
+        amount_of_special_tokens_in_sentence = sum(sentence.count(x, 0, link[0]) for x in special_characters_sentence_list)
+        additional_tokens_in_link = sum(sentence.count(x, link[0], link[1]) for x in special_characters_list)
         if is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence] == 1:
             continue
-        print (is_already_linked_marker)
+        # print (is_already_linked_marker)
         is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence :
         amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
         if link[2] == 1:
@@ -55,7 +54,6 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
         elif link[2] == 3:
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<ORG>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</ORG>"
-        #previous_link_start_position = link[0]
     return ' '.join(detokenizer_with_fixes(sentence_tokens))
         
 
@@ -67,7 +65,7 @@ def add_to_automaton(container_with_data, type, automaton):
             item = ' '.join(detokenizer_with_fixes(items))
         else:
             item = items
-        print (item)
+        # print (item)
         automaton.add_word(item, (type, item))
 
 
@@ -108,22 +106,26 @@ def detokenizer_with_fixes(sentence_tokens): # небольшие костыли
     quot_even = 0
     count = 0
     for token in sentence_tokens:
-        if (token == '&quot;') and (quot_even == 0) and (count < len(sentence_tokens) - 1):
-            if sentence_tokens[count + 1] == '&quot;':
-                sentence_tokens[count + 1] = '&quotquot;'
-            else:
-                quot_even = 1
-                sentence_tokens[count + 1] = '\"' + sentence_tokens[count + 1]
-            sentence_tokens.remove('&quot;')
-            count -= 1
-        elif token == '&quot;' and quot_even != 0: # out of range??
-            quot_even = 0
-            sentence_tokens[count] = sentence_tokens[count] + '\"'
-            sentence_tokens.remove('&quot;')
-            count -= 1
-        elif token == '&quot;' and count >= len(sentence_tokens) - 1 and quot_even != 0:
-            sentence_tokens[count] = sentence_tokens[count] + '\"'
-        count += 1
+        try:
+            if (token == '&quot;') and (quot_even == 0) and (count < len(sentence_tokens) - 1):
+                if sentence_tokens[count + 1] == '&quot;':
+                    sentence_tokens[count + 1] = '&quotquot;'
+                else:
+                    quot_even = 1
+                    sentence_tokens[count + 1] = '\"' + sentence_tokens[count + 1]
+                sentence_tokens.remove('&quot;')
+                count -= 1
+            elif token == '&quot;' and quot_even != 0: # out of range??
+                quot_even = 0
+                sentence_tokens[count] = sentence_tokens[count] + '\"'
+                sentence_tokens.remove('&quot;')
+                count -= 1
+            elif token == '&quot;' and count >= len(sentence_tokens) - 1 and quot_even != 0:
+                sentence_tokens[count] = sentence_tokens[count] + '\"'
+            count += 1
+        except ValueError:
+            count += 1
+            continue
     print (sentence_tokens)
     detokenized_sentence = detokenizer.detokenize(sentence_tokens)
     count = 0
@@ -171,7 +173,7 @@ def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # полу
         for el in tokenized:
             if el == "," or el == "-" or el == "(" or el == ")" or el == "."\
                         or el == '``' or el == "\"" or el == "\'"\
-                    or el == "—": # Убираем знаки препинания и скобки. Вообще нужно ещё почистить от слов вида "река" и "город" # а может и не нужно
+                    or el == "—" or el == '„': # Убираем знаки препинания и скобки. Вообще нужно ещё почистить от слов вида "река" и "город" # а может и не нужно
                 tokenized.remove(el)
                 counter -= 1
         output_list.append(tuple(tokenized))
@@ -235,6 +237,7 @@ for dirp, dirn, files in os.walk(path):
             article_list = text.split(r"</doc>")
             print("LIST LENGTH = ", (len(article_list) - 1))
             pos = -1
+            print (article_list)
             article_list = article_list[:-1] # Последняя это пробелы после последней осмысленной статьи
             for article in article_list:
 
@@ -242,7 +245,7 @@ for dirp, dirn, files in os.walk(path):
                 automaton = load_known(automaton, persons, pops, orgs)
 
                 article_name = get_article_name(article)
-                print (article_name)
+                print ("ARTICLE = ", article_name)
                 outpath = str(dir_path) + '/output/'
                 out = codecs.open(outpath + article_name + ".txt", 'a', encoding='utf-8', errors='ignore')
                 article_name = article_name
@@ -303,10 +306,18 @@ for dirp, dirn, files in os.walk(path):
                 # print(article)
                 article_sentences = sentence_tokenizer.tokenize(article) # разбили на предложения
                 sentence_number = 0
+                previous_sentence = ''
                 for sentence_original in article_sentences:
                     sentence_to_work_with = sentence_original[:-1] # отрезали пунктуатор (!.?)
-                    sentence_tokens = tokenizer.tokenize(sentence_to_work_with)
+                    sentence_to_work_with = sentence_to_work_with.replace("„", "\"")
+                    sentence_to_work_with = sentence_to_work_with.replace("“", "\"")
+                    try:
+                        sentence_tokens = tokenizer.tokenize(sentence_to_work_with)
+                    except NameError:
+                        sentence_tokens = tokenizer.tokenize(previous_sentence + ' ' + sentence_to_work_with)
+                        article_sentences[sentence_number - 1] = ''
                     # print(sentence_tokens)
+                    previous_sentence = sentence_to_work_with
                     token_number_in_sentence = 0
                     skip_how_many_tokens = 0 # в случае если обработали подпоследовательность
                     stemmed_sentence = []
@@ -322,8 +333,7 @@ for dirp, dirn, files in os.walk(path):
                     print (sentence_to_work_with)
                     sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens)
                     sentence_to_work_with = sentence_to_work_with + sentence_original[-1]
-                    sentence_original = sentence_to_work_with
-                    article_sentences[sentence_number] = sentence_original
+                    article_sentences[sentence_number] = sentence_to_work_with
                     sentence_number += 1
                 person_link_set.clear()
                 org_link_set.clear()
