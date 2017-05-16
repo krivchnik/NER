@@ -26,6 +26,36 @@ def sort_by_length(x): # для сортировки tuple по длине
     #     assert False, 'неизвестная зверушка'
 
 
+def manual_link_remove(article, pos_in):
+    index = article.find("]]", pos_in)
+    text = article[pos_in + 2: index]
+    article_out = article
+    is_bad = False
+    if text.startswith("Файл:") or text.startswith("Категория:"):
+        is_bad = True
+
+    is_prop = False
+    if (article.find("|", pos_in + 1) > article.find("]]", pos_in + 1)) or (article.find("|", pos_in + 1) == -1):
+        is_prop = True
+
+    if is_bad:
+        if (article.find("[[", pos_in + 2) < article.find("]]", pos_in + 2)):
+            manual_link_remove(article, article.find("[[", pos_in + 1))
+        else:
+            article_out = article[:pos_in] + article[article.find("]]", pos_in + 1)]
+    else:
+        if is_prop:
+            print ("Iserting proper link")
+            print (article[(pos_in+2):article.find("]]", pos_in + 2)])
+            article_out = article[:pos_in] + article[(pos_in+2):article.find("]]", pos_in + 1)] + article[(article.find("]]", pos_in + 1) + 2):]
+        else:
+            print ("Inserting inproper link")
+            print (article[(article.find("|", pos_in + 1) + 1): article.find("]]", pos_in + 1)])
+            article_out = article[:pos_in] + article[(article.find("|", pos_in + 1) + 1): article.find("]]", pos_in + 1)] + article[(article.find("]]", pos_in + 1) + 2):]
+    return article_out
+
+
+
 def insert_links(sentence, links, sentence_tokens): # всё ещё едут ссылки немного. закрывающиеся скобки?
     links.sort(key=sort_by_length, reverse=True)
     links.sort(key=sort_by_first)
@@ -148,9 +178,9 @@ def detokenizer_with_fixes(sentence_tokens): # небольшие костыли
             detokenized_sentence.remove('(((')
     return detokenized_sentence
 
+
 def find_synonims(text, data):
     terms = set()
-
     try:
         try:
             for val in data[str(text)]:
@@ -161,6 +191,7 @@ def find_synonims(text, data):
     except KeyError:
         pass
     return terms
+
 
 def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # получение стемов токенов по сету
     output_list = []
@@ -253,7 +284,7 @@ for dirp, dirn, files in os.walk(path):
                 pos = article.find('>', pos)
                 article = article[pos+1:] # удаляем шапку с <doc>
                 pos = -1
-                pos = article.find("[[", pos + 2)
+                pos = article.find("[[")
                 text = ''
                 index = 0
                 temp_set = set()
@@ -265,7 +296,7 @@ for dirp, dirn, files in os.walk(path):
                 while pos > 0: #ищем все ссылки
                     old_pos = pos
                     isProper = False # совпадает ли текст ссылки и сама ссылка
-                    if (article.find("|", pos + 1) > article.find("]]", pos + 1)) or article.find("|", pos + 1) == -1:
+                    if (article.find("|", pos) > article.find("]]", pos)) or (article.find("|", pos) == -1):
                         isProper = True
                     if not isProper:
                         index = article.find("|", pos)
@@ -274,19 +305,27 @@ for dirp, dirn, files in os.walk(path):
                         index = article.find("]]", pos)
                         text = article[pos + 2: index]
                     if text.startswith("Файл:") or text.startswith("Категория:"):
-                        pos = article.find("[[", pos + 2)
+                        article = manual_link_remove(article, pos)
+                        pos = article.find("[[", pos + 1)
+                        if old_pos > pos:
+                            break
                         continue
                     synonyms = set()
                     synonyms.add(text)
-                    print (text)
+                    # print (text)
+                    pos0 = pos # to give into function
                     if not isProper:
                         pos = article.find("]]", index)
                         syn = article[index + 1: pos]
                         synonyms.add(syn)
+                    else:
+                        pos += 3 # for next offset consistency
+                    article = manual_link_remove(article, pos0)
+
                     synonyms = synonyms.union(find_synonims(text, synonyms_all_data)) # поиск синонимов
                     # person_link_set, pop_link_set, org_link_set = add_to_set(synonyms, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                     person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, synonyms, person_link_set, pop_link_set, org_link_set) # добавили в сеты
-                    pos = article.find("[[", pos + 1)
+                    pos = article.find("[[", pos - 2)
                     if old_pos > pos:
                         break
                 pos = -1
@@ -301,8 +340,8 @@ for dirp, dirn, files in os.walk(path):
                 add_to_automaton(org_link_list_stemmed, 3, automaton)
                 automaton.make_automaton()
                 # получили списки стемов синонимов
-                wikilink_rx = re.compile(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]') # для удаления ссылок
-                article = wikilink_rx.sub(r'\1', article)
+                # wikilink_rx = re.compile(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]') # для удаления ссылок
+                # article = wikilink_rx.sub(r'\1', article)
                 # print(article)
                 article_sentences = sentence_tokenizer.tokenize(article) # разбили на предложения
                 sentence_number = 0
