@@ -11,6 +11,7 @@ from nltk.tokenize import word_tokenize
 import codecs
 import json
 import ahocorasick # 1 is person,  2 is location, 3 is organization
+import pymorphy2
 
 
 def sort_by_first(x):
@@ -45,16 +46,18 @@ def manual_link_remove(article, pos_in):
             pos_inner = pos_in
             while counter != 0:
                 pos_inner_open = article.find("[[", pos_inner + 1)
-                pos_inner_close = article.find("]]", pos_inner)
-                if pos_inner_open < pos_inner_close:
+                pos_inner_close = article.find("]]", pos_inner + 1)
+                if pos_inner_open < pos_inner_close and pos_inner_open != -1:
                     counter += 1
                     pos_inner = pos_inner_open
-                else:
+                elif pos_inner_close != -1:
                     counter -= 1
                     pos_inner = pos_inner_close
+                else:
+                    assert False, "Something wrong in deleting link"
             article_out = article[:pos_in] + article[pos_inner + 2:]
         else:
-            article_out = article[:pos_in] + article[article.find("]]", pos_in + 1)]
+            article_out = article[:pos_in] + article[article.find("]]", pos_in + 1) + 2:]
     else:
         if is_prop:
             print ("Iserting proper link")
@@ -83,22 +86,22 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
         amount_of_special_tokens_in_sentence = sum(sentence.count(x, 0, link[0]) for x in special_characters_sentence_list)
         additional_tokens_in_link = sum(sentence.count(x, link[0], link[1]) for x in special_characters_list)
         spaces_in_link = sentence.count(" ", link[0], link[1])
-        additional_tokens_in_link = spaces_in_link - additional_tokens_in_link
-        if is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence] == 1:
-            print (link, amount_of_spaces + amount_of_special_tokens_in_sentence)
+        additional_tokens_in_link = spaces_in_link + additional_tokens_in_link
+        additional_tokens_in_sentence = amount_of_spaces + amount_of_special_tokens_in_sentence
+        if is_already_linked_marker[additional_tokens_in_sentence] == 1:
+            print (link, additional_tokens_in_sentence)
             continue
-        is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence :
-        amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
+        is_already_linked_marker[additional_tokens_in_sentence : additional_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
         print (is_already_linked_marker)
         if link[2] == 1:
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<PER>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
+            sentence_tokens[additional_tokens_in_sentence] = "<PER>" + sentence_tokens[additional_tokens_in_sentence]
+            sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
         elif link[2] == 2:
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<LOC>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</LOC>"
+            sentence_tokens[additional_tokens_in_sentence] = "<LOC>" + sentence_tokens[additional_tokens_in_sentence]
+            sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] + "</LOC>"
         elif link[2] == 3:
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<ORG>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
-            sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</ORG>"
+            sentence_tokens[additional_tokens_in_sentence] = "<ORG>" + sentence_tokens[additional_tokens_in_sentence]
+            sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] + "</ORG>"
     return ' '.join(detokenizer_with_fixes(sentence_tokens))
         
 
@@ -215,7 +218,8 @@ def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # полу
         counter = len(tokenized)
         while counter > 0:
             counter -= 1
-            tokenized[counter] = stemmer.stem(tokenized[counter])
+            # tokenized[counter] = stemmer.stem(tokenized[counter])
+            tokenized[counter] = lemmatizer.parse(tokenized[counter].lower())[0].normal_form
         for el in tokenized:
             if el == "," or el == "-" or el == "(" or el == ")" or el == "."\
                         or el == '``' or el == "\"" or el == "\'"\
@@ -270,6 +274,7 @@ pop_link_set = set()
 detokenizer = MosesDetokenizer()
 tokenizer = MosesTokenizer()
 stemmer = SnowballStemmer("russian")
+lemmatizer = pymorphy2.MorphAnalyzer()
 sentence_tokenizer = PunktSentenceTokenizer()
 known_words = ahocorasick.Automaton()
 known_words = load_known(known_words, persons, pops, orgs)
@@ -347,17 +352,10 @@ for dirp, dirn, files in os.walk(path):
                 pop_link_list_stemmed = tokenize_and_stem_set(pop_link_set, True, False) # нужно перемешивать, не использовать части как независимые
                 org_link_list_stemmed = tokenize_and_stem_set(org_link_set, False, False) # не перемешиваем и не используем части как независимые
                 per_link_list_stemmed = tokenize_and_stem_set(person_link_set, True, True) # и перемешиваем и рассматриваем части как независимые
-                # pop_link_list_stemmed.sort(key=sort_by_length, reverse = True)
-                # per_link_list_stemmed.sort(key=sort_by_length, reverse = True)
-                # org_link_list_stemmed.sort(key=sort_by_length, reverse = True)
                 add_to_automaton(per_link_list_stemmed, 1, automaton)
                 add_to_automaton(pop_link_list_stemmed, 2, automaton)
                 add_to_automaton(org_link_list_stemmed, 3, automaton)
                 automaton.make_automaton()
-                # получили списки стемов синонимов
-                # wikilink_rx = re.compile(r'\[\[(?:[^|\]]*\|)?([^\]]+)\]\]') # для удаления ссылок
-                # article = wikilink_rx.sub(r'\1', article)
-                # print(article)
                 article_sentences = sentence_tokenizer.tokenize(article) # разбили на предложения
                 sentence_number = 0
                 previous_sentence = ''
@@ -376,14 +374,18 @@ for dirp, dirn, files in os.walk(path):
                     skip_how_many_tokens = 0 # в случае если обработали подпоследовательность
                     stemmed_sentence = []
                     for token in sentence_tokens:
-                        stemmed_sentence.append(stemmer.stem(token))
+                        # stemmed_sentence.append(stemmer.stem(token))
+                        stemmed_sentence.append(lemmatizer.parse(token.lower())[0].normal_form)
                     sentence_to_work_with = ' '.join(detokenizer_with_fixes(stemmed_sentence))
                     sentence_links = []
-                    for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
-                        start_index = end_index - len(original_value) + 1
-                        if (end_index - start_index) <= 2: # одинокие буквы в случае если не стоит точка при инициалах
-                            continue
-                        sentence_links.append((start_index, end_index, typ))
+                    try:
+                        for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
+                            start_index = end_index - len(original_value) + 1
+                            if (end_index - start_index) <= 2: # одинокие буквы в случае если не стоит точка при инициалах
+                                continue
+                            sentence_links.append((start_index, end_index, typ))
+                    except AttributeError:
+                        pass
                     print (sentence_to_work_with)
                     sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens)
                     sentence_to_work_with = sentence_to_work_with + sentence_original[-1]
