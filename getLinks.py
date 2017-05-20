@@ -39,8 +39,20 @@ def manual_link_remove(article, pos_in):
         is_prop = True
 
     if is_bad:
-        if (article.find("[[", pos_in + 2) < article.find("]]", pos_in + 2)):
-            manual_link_remove(article, article.find("[[", pos_in + 1))
+        print ("Deleting bad link")
+        if (article.find("[[", pos_in + 2) < article.find("]]", pos_in + 2)): # вложенные ссылки
+            counter = 1
+            pos_inner = pos_in
+            while counter != 0:
+                pos_inner_open = article.find("[[", pos_inner + 1)
+                pos_inner_close = article.find("]]", pos_inner)
+                if pos_inner_open < pos_inner_close:
+                    counter += 1
+                    pos_inner = pos_inner_open
+                else:
+                    counter -= 1
+                    pos_inner = pos_inner_close
+            article_out = article[:pos_in] + article[pos_inner + 2:]
         else:
             article_out = article[:pos_in] + article[article.find("]]", pos_in + 1)]
     else:
@@ -70,11 +82,14 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
             assert False, "что-то не так во вставке ссылок"
         amount_of_special_tokens_in_sentence = sum(sentence.count(x, 0, link[0]) for x in special_characters_sentence_list)
         additional_tokens_in_link = sum(sentence.count(x, link[0], link[1]) for x in special_characters_list)
+        spaces_in_link = sentence.count(" ", link[0], link[1])
+        additional_tokens_in_link = spaces_in_link - additional_tokens_in_link
         if is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence] == 1:
+            print (link, amount_of_spaces + amount_of_special_tokens_in_sentence)
             continue
-        # print (is_already_linked_marker)
         is_already_linked_marker[amount_of_spaces + amount_of_special_tokens_in_sentence :
         amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
+        print (is_already_linked_marker)
         if link[2] == 1:
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence] = "<PER>" + sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence]
             sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[amount_of_spaces + amount_of_special_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
@@ -306,7 +321,7 @@ for dirp, dirn, files in os.walk(path):
                         text = article[pos + 2: index]
                     if text.startswith("Файл:") or text.startswith("Категория:"):
                         article = manual_link_remove(article, pos)
-                        pos = article.find("[[", pos + 1)
+                        pos = article.find("[[")
                         if old_pos > pos:
                             break
                         continue
@@ -319,13 +334,13 @@ for dirp, dirn, files in os.walk(path):
                         syn = article[index + 1: pos]
                         synonyms.add(syn)
                     else:
-                        pos += 3 # for next offset consistency
+                        pos += 2 # for next offset consistency
                     article = manual_link_remove(article, pos0)
 
                     synonyms = synonyms.union(find_synonims(text, synonyms_all_data)) # поиск синонимов
                     # person_link_set, pop_link_set, org_link_set = add_to_set(synonyms, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                     person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, synonyms, person_link_set, pop_link_set, org_link_set) # добавили в сеты
-                    pos = article.find("[[", pos - 2)
+                    pos = article.find("[[")
                     if old_pos > pos:
                         break
                 pos = -1
