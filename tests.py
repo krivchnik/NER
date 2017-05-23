@@ -7,6 +7,7 @@ import ahocorasick
 
 known_words = ahocorasick.Automaton()
 known_words.add_word("первый второй", (1, "первый второй"))
+known_words.add_word("второй", (3, "второй"))
 known_words.add_word("второй", (2, "второй"))
 known_words.make_automaton()
 haystack = "На первый второй, рассчитайсь!"
@@ -23,7 +24,7 @@ for itms in some_set:
     result = known_words.get(itms, "nope")
     if result != "nope":
         print ("Yay!")
-        print (result[0])
+        print (result)
 
 # def find_synonims(text):
 # print ("lul")
@@ -80,3 +81,4 @@ for itms in some_set:
 # # for tokensssss in tokenss:
 # #     tokensssss = tokensssss.decode('utf8')
 # print detokenizer.detokenize(tokenss)
+

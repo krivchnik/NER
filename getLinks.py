@@ -2,7 +2,6 @@
 #! .env/Scripts/python
 # -*- coding: utf-8 -*-
 import os
-import re
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 from nltk.tokenize.moses import MosesDetokenizer
@@ -12,10 +11,58 @@ import codecs
 import json
 import ahocorasick # 1 is person,  2 is location, 3 is organization
 import pymorphy2
+# from rdflib import BNode, Literal, Namespace, Graph, term
+# from rdflib.namespace import RDF
+# text_annot = BNode() # для удобства обращения
+
+# def create_rdf(text, g):
+#
+#     start = Literal(24)
+#     end = Literal(42)
+#     doc_text = Literal(text)
+#     rdfs = Namespace("http://www.w3.org/2000/01/rdf-schema#")
+#     persons = Namespace("http://www.abbyy.com/ns/BasicEntity#")
+#     orgs = Namespace("http://www.abbyy.com/ns/Org#")
+#     places = Namespace("http://www.abbyy.com/ns/Geo#")
+#     annotations = Namespace("http://www.abbyy.com/ns/Aux#")
+#     annotations.document_text = term.URIRef(u'http://www.abbyy.com/ns/Aux#document_text')
+#     annotations.annotation = term.URIRef(u"http://www.abbyy.com/ns/Aux#annotation")
+#     annotations.text_annotations = term.URIRef(u"http://www.abbyy.com/ns/Aux#TextAnnotations")
+#     annotations.InstanceAnnotation = term.URIRef(u"http://www.abbyy.com/ns/Aux#InstanceAnnotation")
+#     annotations.annotation_start = term.URIRef(u"http://www.abbyy.com/ns/Aux#annotation_start")
+#     annotations.annotation_end = term.URIRef(u"http://www.abbyy.com/ns/Aux#annotation_end")
+#     g.namespace_manager.bind("Aux", annotations)
+#     g.namespace_manager.bind("Org", orgs)
+#     g.namespace_manager.bind("BasicEntity", persons)
+#     g.namespace_manager.bind("Geo", places)
+#     g.namespace_manager.bind("rdfs", rdfs)
+#     # g.add((bob, persons, persons))
+#     # g.add((bob, FOAF.name, name))
+#     # g.add((bob, FOAF.knows, linda))
+#     # g.add((text, RDF.type, persons))
+#     g.add((text_annot, RDF.type, annotations.text_annotation))
+#     g.add((text_annot, annotations.document_text, doc_text))
+#     # print (g.serialize(format='pretty-xml'))
+#     return g
+
+# def add_obj_with_annotation(link, offset, article_rdf, rdf):
+#     to_add = BNode()
+#     annotation = BNode()
+#     if link[2] == 1:
+#         rdf.add(to_add, RDF.type, persons)
+#         rdf.add(text_annot, annotations.annotation, )
+
+
+def sort_by_priority(dat):
+    if dat[2] == first_priority:
+        return 1
+    else:
+        return 0
 
 
 def sort_by_first(x):
     return x[0]
+
 
 def sort_by_length(x): # для сортировки tuple по длине
     return x[1] - x[0]
@@ -60,25 +107,27 @@ def manual_link_remove(article, pos_in):
             article_out = article[:pos_in] + article[article.find("]]", pos_in + 1) + 2:]
     else:
         if is_prop:
-            print ("Iserting proper link")
-            print (article[(pos_in+2):article.find("]]", pos_in + 2)])
+            # print ("Deleting proper link")
+            # print (article[(pos_in+2):article.find("]]", pos_in + 2)])
             article_out = article[:pos_in] + article[(pos_in+2):article.find("]]", pos_in + 1)] + article[(article.find("]]", pos_in + 1) + 2):]
         else:
-            print ("Inserting inproper link")
-            print (article[(article.find("|", pos_in + 1) + 1): article.find("]]", pos_in + 1)])
+            # print ("Deleting inproper link")
+            # print (article[(article.find("|", pos_in + 1) + 1): article.find("]]", pos_in + 1)])
             article_out = article[:pos_in] + article[(article.find("|", pos_in + 1) + 1): article.find("]]", pos_in + 1)] + article[(article.find("]]", pos_in + 1) + 2):]
     return article_out
 
 
 
-def insert_links(sentence, links, sentence_tokens): # всё ещё едут ссылки немного. закрывающиеся скобки?
-    links.sort(key=sort_by_length, reverse=True)
-    links.sort(key=sort_by_first)
+def insert_links(sentence, links, sentence_tokens, first_priority ): #, offset, article_rdf, rdf
     print ("In insert_links")
+    links.sort(key=sort_by_length, reverse=True)
+    print(links)
+    links.sort(key=sort_by_priority, reverse=True)
+    links.sort(key=sort_by_first)
     print (links)
     is_already_linked_marker = [0] * len(sentence_tokens) # храним и помечаем проставленные ссылки, чтобы случайно не поставить короткую и длинную на одно и то же
-    special_characters_list = [', ', ' (', ') ', ' >', ' <'] # Символы, которые увеличивают смещение и считаются отдельными токенами
-    special_characters_sentence_list = [', ', ' (', ') ', ' >', ' <', ' \"'] # ещё посмотреть
+    special_characters_list = [', ', ' (', ')', ' >', ' <', '% ', ': ', '; '] # Символы, которые увеличивают смещение и считаются отдельными токенами
+    special_characters_sentence_list = [', ', ' (', ') ', ' >', ' <', ' \"', '% ', ': ', '; '] # ещё посмотреть
     for link in links:
         amount_of_spaces = sentence.count(' ', 0, link[0])
         if amount_of_spaces > len(sentence_tokens):
@@ -89,10 +138,16 @@ def insert_links(sentence, links, sentence_tokens): # всё ещё едут с�
         additional_tokens_in_link = spaces_in_link + additional_tokens_in_link
         additional_tokens_in_sentence = amount_of_spaces + amount_of_special_tokens_in_sentence
         if is_already_linked_marker[additional_tokens_in_sentence] == 1:
-            print (link, additional_tokens_in_sentence)
+            # print (link, additional_tokens_in_sentence)
+            continue
+        # link[2] == 1 and
+        if sentence_tokens[additional_tokens_in_sentence][0] == sentence_tokens[additional_tokens_in_sentence][0].lower():
+            print ("LETTER", sentence_tokens[additional_tokens_in_sentence][0])
+            print ("WORD", sentence_tokens[additional_tokens_in_sentence])
             continue
         is_already_linked_marker[additional_tokens_in_sentence : additional_tokens_in_sentence + additional_tokens_in_link + 1] = [1] * (additional_tokens_in_link + 1)
-        print (is_already_linked_marker)
+        # print (is_already_linked_marker)
+        # add_obj_with_annotation(link, offset, article_rdf, rdf)
         if link[2] == 1:
             sentence_tokens[additional_tokens_in_sentence] = "<PER>" + sentence_tokens[additional_tokens_in_sentence]
             sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] = sentence_tokens[additional_tokens_in_sentence + additional_tokens_in_link] + "</PER>"
@@ -120,10 +175,10 @@ def add_to_automaton(container_with_data, type, automaton):
 def load_known(known_words, persons, pops, orgs):
     for lines in persons:
         known_words.add_word(lines.rstrip('\r\n'), (1, lines.rstrip('\r\n'))) # \r\n Windows-like ending
-    for lines in pops:
-        known_words.add_word(lines.rstrip('\r\n'), (2, lines.rstrip('\r\n')))
     for lines in orgs:
         known_words.add_word(lines.rstrip('\r\n'), (3, lines.rstrip('\r\n')))
+    for lines in pops:
+        known_words.add_word(lines.rstrip('\r\n'), (2, lines.rstrip('\r\n')))
     return known_words
 
 
@@ -140,13 +195,40 @@ def add_to_set_automaton(automaton, synonyms, person_link_set, pop_link_set, org
     return person_link_set, pop_link_set, org_link_set
 
 
+
+
 def add_to_set(synonyms, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set): # вынес добавление сетов наружу
-    if synonyms.intersection(person_set):
-        person_link_set = person_link_set.union(synonyms)
-    if synonyms.intersection(org_set):
-        org_link_set = org_link_set.union(synonyms)
-    if synonyms.intersection(pop_set):
-        pop_link_set = pop_link_set.union(synonyms)
+    if first_priority != 0 and first_priority != 1:
+        if first_priority == 2:
+            if synonyms.intersection(pop_set):
+                pop_link_set = pop_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+            if synonyms.intersection(person_set):
+                person_link_set = person_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+            if synonyms.intersection(org_set):
+                org_link_set = org_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+        if first_priority == 3:
+            if synonyms.intersection(org_set):
+                org_link_set = org_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+            if synonyms.intersection(pop_set):
+                pop_link_set = pop_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+            if synonyms.intersection(person_set):
+                person_link_set = person_link_set.union(synonyms)
+                return person_link_set, pop_link_set, org_link_set
+    else:
+        if synonyms.intersection(person_set):
+            person_link_set = person_link_set.union(synonyms)
+            return person_link_set, pop_link_set, org_link_set
+        if synonyms.intersection(pop_set):
+            pop_link_set = pop_link_set.union(synonyms)
+            return person_link_set, pop_link_set, org_link_set
+        if synonyms.intersection(org_set):
+            org_link_set = org_link_set.union(synonyms)
+            return person_link_set, pop_link_set, org_link_set
     return person_link_set, pop_link_set, org_link_set
 
 
@@ -219,7 +301,7 @@ def tokenize_and_stem_set(some_set, should_switch, should_use_parts): # полу
         while counter > 0:
             counter -= 1
             # tokenized[counter] = stemmer.stem(tokenized[counter])
-            tokenized[counter] = lemmatizer.parse(tokenized[counter].lower())[0].normal_form
+            tokenized[counter] = lemmatizer.parse(tokenized[counter].lower())[0].normal_form # Убрать Великий и прочие
         for el in tokenized:
             if el == "," or el == "-" or el == "(" or el == ")" or el == "."\
                         or el == '``' or el == "\"" or el == "\'"\
@@ -312,6 +394,14 @@ for dirp, dirn, files in os.walk(path):
                 temp_set = temp_set.union(find_synonims(article_name, synonyms_all_data))
                 # person_link_set, pop_link_set, org_link_set = add_to_set(temp_set, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                 person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, temp_set, person_link_set, pop_link_set, org_link_set) # добавили в сеты
+                first_priority = 0
+                if len(person_link_set) > 0:
+                    first_priority = 1
+                elif len(pop_link_set) > 0:
+                    first_priority = 2
+                elif len(org_link_set) > 0:
+                    first_priority = 3
+                print ("PRIORITY", first_priority)
                 old_pos = 0
                 while pos > 0: #ищем все ссылки
                     old_pos = pos
@@ -341,7 +431,6 @@ for dirp, dirn, files in os.walk(path):
                     else:
                         pos += 2 # for next offset consistency
                     article = manual_link_remove(article, pos0)
-
                     synonyms = synonyms.union(find_synonims(text, synonyms_all_data)) # поиск синонимов
                     # person_link_set, pop_link_set, org_link_set = add_to_set(synonyms, person_set, org_set, pop_set, person_link_set, pop_link_set, org_link_set)
                     person_link_set, pop_link_set, org_link_set = add_to_set_automaton(known_words, synonyms, person_link_set, pop_link_set, org_link_set) # добавили в сеты
@@ -349,16 +438,31 @@ for dirp, dirn, files in os.walk(path):
                     if old_pos > pos:
                         break
                 pos = -1
-                pop_link_list_stemmed = tokenize_and_stem_set(pop_link_set, True, False) # нужно перемешивать, не использовать части как независимые
+                pop_link_list_stemmed = tokenize_and_stem_set(pop_link_set, True, False) # нужно перемешивать,  не использовать части как независимые
                 org_link_list_stemmed = tokenize_and_stem_set(org_link_set, False, False) # не перемешиваем и не используем части как независимые
                 per_link_list_stemmed = tokenize_and_stem_set(person_link_set, True, True) # и перемешиваем и рассматриваем части как независимые
-                add_to_automaton(per_link_list_stemmed, 1, automaton)
-                add_to_automaton(pop_link_list_stemmed, 2, automaton)
-                add_to_automaton(org_link_list_stemmed, 3, automaton)
+                if first_priority != 0 and first_priority != 1:
+                    if first_priority == 2:
+                        add_to_automaton(org_link_list_stemmed, 3, automaton)
+                        add_to_automaton(per_link_list_stemmed, 1, automaton)
+                        add_to_automaton(pop_link_list_stemmed, 2, automaton)
+                    elif first_priority == 3:
+                        add_to_automaton(per_link_list_stemmed, 1, automaton)
+                        add_to_automaton(pop_link_list_stemmed, 2, automaton)
+                        add_to_automaton(org_link_list_stemmed, 3, automaton)
+                else:
+                    add_to_automaton(org_link_list_stemmed, 3, automaton)
+                    add_to_automaton(pop_link_list_stemmed, 2, automaton)
+                    add_to_automaton(per_link_list_stemmed, 1, automaton)
+
                 automaton.make_automaton()
+                # article_rdf = article
+                # g = Graph()
+                # rdf = create_rdf(text, g)
                 article_sentences = sentence_tokenizer.tokenize(article) # разбили на предложения
                 sentence_number = 0
                 previous_sentence = ''
+                # offset = 0
                 for sentence_original in article_sentences:
                     sentence_to_work_with = sentence_original[:-1] # отрезали пунктуатор (!.?)
                     sentence_to_work_with = sentence_to_work_with.replace("„", "\"")
@@ -378,19 +482,27 @@ for dirp, dirn, files in os.walk(path):
                         stemmed_sentence.append(lemmatizer.parse(token.lower())[0].normal_form)
                     sentence_to_work_with = ' '.join(detokenizer_with_fixes(stemmed_sentence))
                     sentence_links = []
+                    roman_numbers = []
+                    roman_numbers.append("I")
+                    roman_numbers.append("V")
+                    roman_numbers.append("X")
+
                     try:
                         for end_index, (typ, original_value) in automaton.iter(sentence_to_work_with):
                             start_index = end_index - len(original_value) + 1
-                            if (end_index - start_index) <= 2: # одинокие буквы в случае если не стоит точка при инициалах
+                            if (end_index - start_index) <= 2 and not any((c in article[start_index:end_index])
+                                                                          for c in roman_numbers ): # одинокие буквы в случае если не стоит точка при инициалах
                                 continue
                             sentence_links.append((start_index, end_index, typ))
                     except AttributeError:
                         pass
                     print (sentence_to_work_with)
-                    sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens)
+                    sentence_to_work_with = insert_links(sentence_to_work_with, sentence_links, sentence_tokens, first_priority) #, offset, article_rdf, rdf)
+                    # sentence_to_work_with = ' '.join(detokenizer_with_fixes(sentence_tokens))
                     sentence_to_work_with = sentence_to_work_with + sentence_original[-1]
                     article_sentences[sentence_number] = sentence_to_work_with
                     sentence_number += 1
+                    # offset += len(sentence_to_work_with) + 1
                 person_link_set.clear()
                 org_link_set.clear()
                 pop_link_set.clear()
